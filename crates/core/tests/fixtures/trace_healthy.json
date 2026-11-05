@@ -1,0 +1,35 @@
+{
+  "timestamp_utc": 1730822400,
+  "physical_total_bytes": 17179869184,
+  "available_bytes": 9663676416,
+  "in_use_bytes": 7516192768,
+  "modified_bytes": 83886080,
+  "standby": {
+    "reserve_bytes": 1073741824,
+    "normal_bytes": 4294967296,
+    "core_bytes": 268435456
+  },
+  "free_zero_bytes": 4026531840,
+  "commit": {
+    "total_bytes": 8589934592,
+    "limit_bytes": 21474836480,
+    "peak_bytes": 10737418240
+  },
+  "hard_faults_per_sec": 4.5,
+  "top_consumers": [
+    {
+      "pid": 1204,
+      "name": "browser.exe",
+      "private_bytes": 1610612736,
+      "working_set_bytes": 2147483648,
+      "is_growing": false
+    },
+    {
+      "pid": 4580,
+      "name": "code.exe",
+      "private_bytes": 805306368,
+      "working_set_bytes": 1073741824,
+      "is_growing": false
+    }
+  ]
+}

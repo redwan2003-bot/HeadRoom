@@ -1,0 +1,28 @@
+{
+  "timestamp_utc": 1730822402,
+  "physical_total_bytes": 8589934592,
+  "available_bytes": 419430400,
+  "in_use_bytes": 8170504192,
+  "modified_bytes": 314572800,
+  "standby": {
+    "reserve_bytes": 104857600,
+    "normal_bytes": 209715200,
+    "core_bytes": 0
+  },
+  "free_zero_bytes": 104857600,
+  "commit": {
+    "total_bytes": 10737418240,
+    "limit_bytes": 12884901888,
+    "peak_bytes": 11811160064
+  },
+  "hard_faults_per_sec": 88.5,
+  "top_consumers": [
+    {
+      "pid": 5012,
+      "name": "render_node.exe",
+      "private_bytes": 5368709120,
+      "working_set_bytes": 4831838208,
+      "is_growing": true
+    }
+  ]
+}

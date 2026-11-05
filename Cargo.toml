@@ -1,5 +1,9 @@
 [workspace]
 members = [
+    "crates/core",
+    "crates/sys",
+    "crates/agent",
+    "crates/dashboard",
     "spikes/spike1_counters",
     "spikes/spike2_priv_actions",
     "spikes/spike3_commit_invariant",

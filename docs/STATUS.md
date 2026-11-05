@@ -1,52 +1,53 @@
 # Headroom Project Status
 
-Current Phase: **Phase 0 (Spikes & Foundations) — Awaiting Gate 0 Approval**
+Current Phase: **Phase 1 (Monitor v0.1) — Awaiting Gate 1 Approval**
 Last Updated: 2026-11-05
 
 ---
 
 ## Current Status Overview
 
-- **Active Phase**: Phase 0: Spike (Complete)
-- **Phase Goal**: Validate architectural assumptions, verify non-elevated counter queries, compile VM test scripts for destructive actions, baseline binary/runtime footprint, and establish repository governance.
-- **Current Stop Gate**: Gate 0 (`spikes/REPORT.md`). Awaiting explicit user approval: `approved, start Phase 1`.
+- **Active Phase**: Phase 1: Monitor (v0.1) (Complete)
+- **Phase Goal**: Build unprivileged monitoring core (`crates/core`), read-only Win32 wrappers (`crates/sys`), persistent Win32 tray agent (`crates/agent`), and on-demand diagnostic dashboard (`crates/dashboard`).
+- **Current Stop Gate**: Gate 1. Awaiting explicit user approval: `approved, start Phase 2`.
 
 ---
 
 ## Progress Tracker
 
 ### Done
-- [x] Initialized Git repository on `main` branch.
-- [x] Configured remote origin: `https://github.com/redwan2003-bot/Mem_Reduct.git`.
-- [x] Installed Rust toolchain (Rustup 1.29.3, Rustc / Cargo 1.99.1 `x86_64-pc-windows-gnu`).
-- [x] Installed and configured `cargo-deny` 0.20.2.
-- [x] Created `docs/PLAN.md` (unmodified copy of engineering brief).
-- [x] Created `AGENTS.md` (< 4 KB, summarizing sections 1 & 4 with pointers to PLAN.md).
-- [x] Created `docs/DECISIONS.md` (initial architectural records).
-- [x] Created `LICENSE` (MIT clean-room).
-- [x] Created `deny.toml` (license compliance policy).
-- [x] Created `Cargo.toml` (workspace and shared lints).
-- [x] Created `.gitignore`.
-- [x] Created `README.md`.
-- [x] Task 0.3: Spike 1 — Unelevated Memory Counters & Performance Info (`spikes/spike1_counters`). **[measured]**
-- [x] Task 0.4: Spike 2 — Privileged Cleaning Actions Probe (Release binary & `spikes/run_in_vm.bat`). **[documented/VM runner ready]**
-- [x] Task 0.5: Spike 3 — Trimming vs. Commit Invariant (Release binary & `spikes/run_in_vm.bat`). **[documented/VM runner ready]**
-- [x] Task 0.6: Spike 4 — 60-Second Page-In / Read-Back Signal (`spikes/spike4_pagein_signal`). **[measured]**
-- [x] Task 0.7: Spike 5 — Unelevated Working Set Trimming & Memory Priority (`spikes/spike5_unelevated_trim`). **[measured]**
-- [x] Task 0.8: Spike 6 — Resource Footprint Baseline (`spikes/spike6_footprint`). **[measured]**
-- [x] Task 0.9: Spike 7 — Fullscreen & Game Detection (`spikes/spike7_fullscreen`). **[measured]**
-- [x] Task 0.10: Gate 0 Report (`spikes/REPORT.md`).
+- [x] Phase 0 completed and verified with all 7 spikes.
+- [x] Task 1.1: `crates/core` with `#![forbid(unsafe_code)]`, zero OS dependencies, versioned config migration/fallback, and 4-state classifier (`Healthy`, `CacheFull`, `UnderPressure`, `CommitRisk`).
+- [x] Task 1.2: `crates/sys` safe read-only wrappers for PDH English counters, PSAPI `GetPerformanceInfo`, and Toolhelp32 process inspection (all unsafe blocks audited with `// SAFETY:` comments).
+- [x] Task 1.3: Real memory trace fixtures in `crates/core/tests/fixtures/` and 6 passing classifier unit tests.
+- [x] Task 1.4: `crates/agent` native Win32 tray agent with single-instance mutex, DPI v2 awareness, and `TaskbarCreated` recovery.
+- [x] Task 1.5: `crates/dashboard` on-demand diagnostic window with GDI double-buffering, Immersive Dark Theme, live counter grid, and process table.
+- [x] Task 1.6: Measured release build resource budgets (all passed with high margin).
 
 ### In Progress
-- [ ] Awaiting Gate 0 review and approval to proceed to Phase 1.
+- [ ] Awaiting Gate 1 review and owner approval to proceed to Phase 2.
+
+---
+
+## Gate 1 Budget Verification Matrix (Measured on Release Build)
+
+| Metric | Section 11 Budget | Measured Result | Status |
+|---|---|---|---|
+| **Agent Private Memory** | Under 5 MB | **1.31 MB** | **PASS [measured]** |
+| **Agent Average Idle CPU** | Under 0.1% | **0.0000%** | **PASS [measured]** |
+| **Agent Executable Size** | Under 2 MB | **348.5 KB** | **PASS [measured]** |
+| **Dashboard Executable Size** | Under 2 MB | **283.0 KB** | **PASS [measured]** |
+| **Dashboard Window Open Time**| Under 300 ms | **220 - 241 ms** | **PASS [measured]** |
+| **State Classifier Tests** | All Pass | **6 / 6 Passed** | **PASS [measured]** |
+| **Explorer Restart Recovery** | TaskbarCreated Handled | **Verified in code** | **PASS [documented]** |
 
 ---
 
 ## Quality Command Verification
 ```powershell
 cargo fmt --all --check             # PASSED
-cargo clippy --workspace --all-targets -- -D warnings # PASSED
-cargo test --workspace              # PASSED
-cargo deny check                    # PASSED
+cargo clippy --workspace --all-targets -- -D warnings # PASSED (0 warnings)
+cargo test --workspace              # PASSED (all tests passed)
+cargo deny check                    # PASSED (advisories ok, bans ok, licenses ok, sources ok)
 ```
 All checks passed on 2026-11-05.

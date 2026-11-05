@@ -1,0 +1,35 @@
+{
+  "timestamp_utc": 1730822403,
+  "physical_total_bytes": 17179869184,
+  "available_bytes": 2147483648,
+  "in_use_bytes": 15032385536,
+  "modified_bytes": 524288000,
+  "standby": {
+    "reserve_bytes": 524288000,
+    "normal_bytes": 1048576000,
+    "core_bytes": 52428800
+  },
+  "free_zero_bytes": 522190848,
+  "commit": {
+    "total_bytes": 25769803776,
+    "limit_bytes": 26843545600,
+    "peak_bytes": 26000000000
+  },
+  "hard_faults_per_sec": 140.0,
+  "top_consumers": [
+    {
+      "pid": 8840,
+      "name": "mem_hog.exe",
+      "private_bytes": 16106127360,
+      "working_set_bytes": 8589934592,
+      "is_growing": true
+    },
+    {
+      "pid": 9210,
+      "name": "vmwp.exe",
+      "private_bytes": 6442450944,
+      "working_set_bytes": 4294967296,
+      "is_growing": false
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "timestamp_utc": 1730822401,
+  "physical_total_bytes": 17179869184,
+  "available_bytes": 8589934592,
+  "in_use_bytes": 8589934592,
+  "modified_bytes": 104857600,
+  "standby": {
+    "reserve_bytes": 1073741824,
+    "normal_bytes": 6979321856,
+    "core_bytes": 268435456
+  },
+  "free_zero_bytes": 268435456,
+  "commit": {
+    "total_bytes": 9663676416,
+    "limit_bytes": 21474836480,
+    "peak_bytes": 10737418240
+  },
+  "hard_faults_per_sec": 12.0,
+  "top_consumers": [
+    {
+      "pid": 3200,
+      "name": "game.exe",
+      "private_bytes": 3221225472,
+      "working_set_bytes": 4294967296,
+      "is_growing": false
+    }
+  ]
+}
