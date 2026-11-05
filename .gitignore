@@ -1,0 +1,19 @@
+# Rust build outputs
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Spike / VM / Benchmark scratch & local test logs
+spikes/results/*.raw
+bench/results/*.raw
+
+# OS generated files
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/

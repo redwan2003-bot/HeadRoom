@@ -1,0 +1,24 @@
+[workspace]
+members = [
+    "spikes/spike1_counters",
+    "spikes/spike2_priv_actions",
+    "spikes/spike3_commit_invariant",
+    "spikes/spike4_pagein_signal",
+    "spikes/spike5_unelevated_trim",
+    "spikes/spike6_footprint",
+    "spikes/spike7_fullscreen",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Headroom Contributors"]
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
