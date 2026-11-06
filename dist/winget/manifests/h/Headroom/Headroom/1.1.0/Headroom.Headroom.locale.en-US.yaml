@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+
+PackageIdentifier: Headroom.Headroom
+PackageVersion: 1.1.0
+PackageLocale: en-US
+Publisher: Headroom Contributors
+PublisherUrl: https://github.com/redwan2003-bot/HeadRoom
+PublisherSupportUrl: https://github.com/redwan2003-bot/HeadRoom/issues
+PrivacyUrl: https://github.com/redwan2003-bot/HeadRoom/blob/main/docs/SECURITY.md
+PackageName: Headroom
+PackageUrl: https://github.com/redwan2003-bot/HeadRoom
+License: MIT
+LicenseUrl: https://github.com/redwan2003-bot/HeadRoom/blob/main/LICENSE
+Copyright: Copyright (c) 2026 Headroom Contributors
+ShortDescription: Evidence-based native Win32 memory diagnostic and management utility.
+Description: |
+  Headroom is a lightweight, zero-telemetry Windows memory utility designed for low-RAM PCs and gamers.
+  Unlike traditional RAM cleaners that cosmetically purge caches at the expense of disk thrashing,
+  Headroom diagnoses true memory pressure versus healthy caching, protects active games and foreground apps,
+  and writes an auditable receipt for every cleaning action showing memory freed and subsequent 60-second read-back.
+Moniker: headroom
+Tags:
+  - memory
+  - diagnostic
+  - optimizer
+  - win32
+  - rust
+  - system-tray
+ReleaseNotesUrl: https://github.com/redwan2003-bot/HeadRoom/releases/tag/v1.1.0
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

@@ -1,6 +1,6 @@
-; Inno Setup Script for Headroom v1.0
+; Inno Setup Script for Headroom v1.1
 #define MyAppName "Headroom"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "Headroom Contributors"
 #define MyAppURL "https://github.com/redwan2003-bot/HeadRoom"
 #define MyAppExeName "headroom-agent.exe"
@@ -17,7 +17,7 @@ DefaultDirName={localappdata}\Programs\{#MyAppName}
 DisableProgramGroupPage=yes
 LicenseFile=..\LICENSE
 OutputDir=..\target\dist
-OutputBaseFilename=Headroom-Setup-v1.0.0
+OutputBaseFilename=Headroom-Setup-v1.1.0
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern

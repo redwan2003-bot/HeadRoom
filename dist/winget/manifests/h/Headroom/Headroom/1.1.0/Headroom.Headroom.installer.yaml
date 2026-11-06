@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+
+PackageIdentifier: Headroom.Headroom
+PackageVersion: 1.1.0
+InstallerLocale: en-US
+InstallerType: zip
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+UpgradeBehavior: install
+Commands:
+  - headroom
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/redwan2003-bot/HeadRoom/releases/download/v1.1.0/Headroom-v1.1.0-windows-x64.zip
+    InstallerSha256: 495764AA2136542DE63C0AB8513CABCF10B47F1E358831E73A442DA0600E2B5C
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: headroom-cli.exe
+        PortableCommandAlias: headroom
+ManifestType: installer
+ManifestVersion: 1.6.0
