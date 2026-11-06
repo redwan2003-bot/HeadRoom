@@ -7,6 +7,8 @@ license.workspace = true
 [dependencies]
 headroom-core = { path = "../core" }
 headroom-sys = { path = "../sys" }
+headroom-ipc = { path = "../ipc" }
+headroom-engine = { path = "../engine" }
 windows = { version = "0.58", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",

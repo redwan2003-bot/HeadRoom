@@ -10,10 +10,13 @@
 //! - Exits completely on window close, releasing 100% of its memory.
 
 use headroom_core::{classify, Config, MemorySample, StateDiagnosis, SystemState};
+use headroom_engine::CleaningEngine;
+use headroom_ipc::ActionKind;
 use headroom_sys::SystemSampler;
 use std::mem::size_of;
+use std::sync::{Arc, Mutex};
 use windows::core::w;
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateSolidBrush, DeleteDC,
@@ -26,17 +29,21 @@ use windows::Win32::UI::HiDpi::{
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
     GetWindowLongPtrW, KillTimer, PostQuitMessage, RegisterClassExW, SetTimer, SetWindowLongPtrW,
-    TranslateMessage, GWLP_USERDATA, MSG, WINDOW_EX_STYLE, WM_DESTROY, WM_ERASEBKGND, WM_PAINT,
-    WM_TIMER, WNDCLASSEXW, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    TranslateMessage, GWLP_USERDATA, HMENU, MSG, WINDOW_EX_STYLE, WM_COMMAND, WM_DESTROY,
+    WM_ERASEBKGND, WM_PAINT, WM_TIMER, WNDCLASSEXW, WS_CHILD, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 const TIMER_REFRESH_ID: usize = 1;
+const ID_BTN_TRIM: usize = 2001;
+const ID_BTN_PURGE_LOW: usize = 2002;
 
 struct DashboardState {
     sampler: SystemSampler,
     config: Config,
     sample: Option<MemorySample>,
     diagnosis: Option<StateDiagnosis>,
+    engine: Arc<CleaningEngine>,
+    status_message: Arc<Mutex<Option<String>>>,
 }
 
 unsafe extern "system" fn window_proc(
@@ -51,11 +58,73 @@ unsafe extern "system" fn window_proc(
         WM_TIMER => {
             if wparam.0 == TIMER_REFRESH_ID && !state_ptr.is_null() {
                 let state = &mut *state_ptr;
-                if let Ok(sample) = state.sampler.sample(10) {
+                if let Ok(sample) = state.sampler.sample(6) {
                     let diag = classify(&sample, &state.config);
                     state.sample = Some(sample);
                     state.diagnosis = Some(diag);
                     let _ = InvalidateRect(hwnd, None, false);
+                }
+            }
+            LRESULT(0)
+        }
+        WM_COMMAND => {
+            let cmd_id = wparam.0 & 0xFFFF;
+            if !state_ptr.is_null() {
+                let state = &*state_ptr;
+                match cmd_id {
+                    ID_BTN_TRIM => {
+                        let engine = Arc::clone(&state.engine);
+                        let status = Arc::clone(&state.status_message);
+                        let cfg = state.config.clone();
+                        if let Some(s) = &state.sample {
+                            let pids: Vec<u32> = s.top_consumers.iter().map(|p| p.pid).collect();
+                            std::thread::spawn(move || {
+                                let mut count = 0;
+                                for pid in pids {
+                                    if engine
+                                        .execute(
+                                            ActionKind::TrimProcess,
+                                            Some(pid),
+                                            "dashboard_ui",
+                                            &cfg,
+                                        )
+                                        .is_ok()
+                                    {
+                                        count += 1;
+                                    }
+                                }
+                                *status.lock().unwrap() = Some(format!(
+                                    "[+] Trimmed {} background processes (Receipt logged)",
+                                    count
+                                ));
+                            });
+                        }
+                    }
+                    ID_BTN_PURGE_LOW => {
+                        let engine = Arc::clone(&state.engine);
+                        let status = Arc::clone(&state.status_message);
+                        let cfg = state.config.clone();
+                        std::thread::spawn(move || {
+                            match engine.execute(
+                                ActionKind::PurgeLowPriorityStandby,
+                                None,
+                                "dashboard_ui",
+                                &cfg,
+                            ) {
+                                Ok(r) => {
+                                    *status.lock().unwrap() = Some(format!(
+                                        "[+] Low-priority standby purged ({} ms, Receipt logged)",
+                                        r.duration_ms
+                                    ));
+                                }
+                                Err(e) => {
+                                    *status.lock().unwrap() =
+                                        Some(format!("[-] Action skipped: {}", e));
+                                }
+                            }
+                        });
+                    }
+                    _ => {}
                 }
             }
             LRESULT(0)
@@ -250,6 +319,21 @@ fn paint_dashboard(hwnd: HWND, hdc: HDC, state_ptr: *const DashboardState) {
                     let _ = DrawTextW(mem_dc, &mut wide_proc, &mut r_p, DT_LEFT | DT_NOPREFIX);
                     y += 20;
                 }
+
+                // 4. Status Message Feedback
+                if let Ok(guard) = dash.status_message.lock() {
+                    if let Some(msg) = guard.as_ref() {
+                        let _ = SetTextColor(mem_dc, COLORREF(0x004CAF50));
+                        let mut wide_msg: Vec<u16> = msg.encode_utf16().collect();
+                        let mut r_msg = RECT {
+                            left: 25,
+                            top: y + 6,
+                            right: width - 25,
+                            bottom: y + 26,
+                        };
+                        let _ = DrawTextW(mem_dc, &mut wide_msg, &mut r_msg, DT_LEFT | DT_NOPREFIX);
+                    }
+                }
             }
         }
 
@@ -291,6 +375,8 @@ fn main() {
         config,
         sample: initial_sample,
         diagnosis: initial_diag,
+        engine: Arc::new(CleaningEngine::default()),
+        status_message: Arc::new(Mutex::new(None)),
     });
 
     // 3. Register Window Class
@@ -313,7 +399,7 @@ fn main() {
             120,
             120,
             640,
-            500,
+            550,
             HWND::default(),
             None,
             None,
@@ -328,7 +414,38 @@ fn main() {
 
         let _ = SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(dashboard_state) as isize);
 
-        // 5. Enable Immersive Dark Mode
+        // 5. Create Interactive Action Buttons
+        let _ = CreateWindowExW(
+            WINDOW_EX_STYLE(0),
+            w!("BUTTON"),
+            w!("Trim Background Apps"),
+            WS_CHILD | WS_VISIBLE,
+            25,
+            465,
+            200,
+            32,
+            hwnd,
+            HMENU(ID_BTN_TRIM as *mut _),
+            HINSTANCE::default(),
+            None,
+        );
+
+        let _ = CreateWindowExW(
+            WINDOW_EX_STYLE(0),
+            w!("BUTTON"),
+            w!("Purge Low Standby"),
+            WS_CHILD | WS_VISIBLE,
+            235,
+            465,
+            200,
+            32,
+            hwnd,
+            HMENU(ID_BTN_PURGE_LOW as *mut _),
+            HINSTANCE::default(),
+            None,
+        );
+
+        // 6. Enable Immersive Dark Mode
         let dark_mode: i32 = 1;
         let _ = DwmSetWindowAttribute(
             hwnd,
@@ -337,7 +454,7 @@ fn main() {
             size_of::<i32>() as u32,
         );
 
-        // 6. Refresh Timer (1 Hz)
+        // 7. Refresh Timer (1 Hz)
         let _ = SetTimer(hwnd, TIMER_REFRESH_ID, 1000, None);
 
         let elapsed_ms = start_instant.elapsed().as_secs_f64() * 1000.0;

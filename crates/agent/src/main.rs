@@ -14,7 +14,9 @@ use headroom_core::{
 };
 use headroom_engine::CleaningEngine;
 use headroom_ipc::ActionKind;
-use headroom_sys::{get_foreground_process_id, is_fullscreen_or_gaming_active, SystemSampler};
+use headroom_sys::{
+    get_foreground_process_id, is_fullscreen_or_gaming_active, MemoryResourceWatcher, SystemSampler,
+};
 use std::mem::size_of;
 use std::process::Command;
 use std::sync::Arc;
@@ -62,6 +64,7 @@ static mut TASKBAR_CREATED_MSG: u32 = 0;
 
 struct AgentApp {
     sampler: SystemSampler,
+    memory_watcher: MemoryResourceWatcher,
     config: Config,
     filter: HysteresisFilter,
     policy_state: PolicyState,
@@ -110,6 +113,7 @@ unsafe extern "system" fn window_proc(
                     if app.config.mode == OperatingMode::Automatic {
                         let is_fullscreen = is_fullscreen_or_gaming_active();
                         let foreground_pid = get_foreground_process_id();
+                        let is_kernel_low = app.memory_watcher.is_low_memory_signaled();
 
                         let decision = decide(
                             &sample,
@@ -117,6 +121,7 @@ unsafe extern "system" fn window_proc(
                             &app.policy_state,
                             is_fullscreen,
                             foreground_pid,
+                            is_kernel_low,
                         );
 
                         match decision {
@@ -543,6 +548,7 @@ fn main() {
 
         let app_box = Box::new(AgentApp {
             sampler,
+            memory_watcher: MemoryResourceWatcher::new(),
             config,
             filter,
             policy_state: PolicyState::default(),

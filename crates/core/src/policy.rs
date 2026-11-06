@@ -87,6 +87,7 @@ pub fn decide(
     state: &PolicyState,
     is_fullscreen_or_gaming: bool,
     foreground_pid: Option<u32>,
+    is_kernel_low_memory: bool,
 ) -> PolicyDecision {
     let commit_pct = sample.commit.percent();
     let avail_bytes = sample.available_bytes;
@@ -133,7 +134,8 @@ pub fn decide(
     // 2. RULE 2: Available memory low -> Trim background apps, skipping exclusions and foreground.
     let under_pressure_floor_bytes = cfg.thresholds.under_pressure_floor_mb * 1024 * 1024;
     let is_under_pressure = avail_pct <= cfg.thresholds.under_pressure_percent
-        || avail_bytes <= under_pressure_floor_bytes;
+        || avail_bytes <= under_pressure_floor_bytes
+        || is_kernel_low_memory;
 
     if is_under_pressure {
         // Collect eligible background processes (exclude foreground & user exclusions)

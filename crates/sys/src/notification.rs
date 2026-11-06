@@ -72,3 +72,56 @@ pub fn get_foreground_process_id() -> Option<u32> {
         }
     }
 }
+
+/// Kernel-level low physical memory resource notification watcher.
+///
+/// Wraps `CreateMemoryResourceNotification` to receive official OS notifications
+/// when Windows kernel determines physical memory is depleted.
+pub struct MemoryResourceWatcher {
+    handle: Option<windows::Win32::Foundation::HANDLE>,
+}
+
+impl Default for MemoryResourceWatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MemoryResourceWatcher {
+    pub fn new() -> Self {
+        use windows::Win32::System::Memory::{
+            CreateMemoryResourceNotification, LowMemoryResourceNotification,
+        };
+
+        // SAFETY: Calling documented CreateMemoryResourceNotification for kernel low memory event.
+        let handle =
+            unsafe { CreateMemoryResourceNotification(LowMemoryResourceNotification) }.ok();
+        Self { handle }
+    }
+
+    /// Queries whether Windows kernel has signaled a low physical memory condition.
+    pub fn is_low_memory_signaled(&self) -> bool {
+        if let Some(h) = self.handle {
+            use windows::Win32::Foundation::BOOL;
+            use windows::Win32::System::Memory::QueryMemoryResourceNotification;
+
+            let mut state = BOOL(0);
+            // SAFETY: h is a valid memory resource notification handle.
+            let ok = unsafe { QueryMemoryResourceNotification(h, &mut state) }.is_ok();
+            ok && state.as_bool()
+        } else {
+            false
+        }
+    }
+}
+
+impl Drop for MemoryResourceWatcher {
+    fn drop(&mut self) {
+        if let Some(h) = self.handle {
+            // SAFETY: Closing valid notification handle.
+            unsafe {
+                let _ = windows::Win32::Foundation::CloseHandle(h);
+            }
+        }
+    }
+}

@@ -67,7 +67,7 @@ fn test_policy_commit_risk_never_cleans() {
     // Commit charge 95% (20.9 GB / 22 GB)
     let sample = create_sample(400, 100, 300, 20900, 22000);
 
-    let decision = decide(&sample, &cfg, &state, false, Some(100));
+    let decision = decide(&sample, &cfg, &state, false, Some(100), false);
 
     match decision {
         PolicyDecision::WarnCommitRisk { top_committers, .. } => {
@@ -88,7 +88,7 @@ fn test_policy_monitor_mode_does_nothing() {
     // Memory critically low (300 MB available)
     let sample = create_sample(300, 50, 250, 5000, 20000);
 
-    let decision = decide(&sample, &cfg, &state, false, Some(100));
+    let decision = decide(&sample, &cfg, &state, false, Some(100), false);
     assert_eq!(decision, PolicyDecision::None);
 }
 
@@ -104,7 +104,7 @@ fn test_policy_fullscreen_gaming_suppression() {
     let sample = create_sample(300, 50, 250, 5000, 20000);
     let is_fullscreen = true;
 
-    let decision = decide(&sample, &cfg, &state, is_fullscreen, Some(100));
+    let decision = decide(&sample, &cfg, &state, is_fullscreen, Some(100), false);
     assert_eq!(decision, PolicyDecision::None);
 }
 
@@ -120,7 +120,7 @@ fn test_policy_foreground_app_protected_and_exclusions_honored() {
     // "explorer.exe" is in default exclusions
     let sample = create_sample(400, 50, 350, 5000, 20000);
 
-    let decision = decide(&sample, &cfg, &state, false, Some(100));
+    let decision = decide(&sample, &cfg, &state, false, Some(100), false);
 
     match decision {
         PolicyDecision::TrimBackgroundApps {
@@ -155,11 +155,35 @@ fn test_policy_stutter_profile_purges_low_standby() {
     // while Standby cache is 3400 MB
     let sample = create_sample(3500, 100, 3400, 5000, 20000);
 
-    let decision = decide(&sample, &cfg, &state, false, Some(100));
+    let decision = decide(&sample, &cfg, &state, false, Some(100), false);
 
     match decision {
         PolicyDecision::PurgeLowPriorityStandby { .. } => {}
         other => panic!("Expected PurgeLowPriorityStandby, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_policy_kernel_low_memory_triggers_trim() {
+    let cfg = Config {
+        mode: OperatingMode::Automatic,
+        ..Default::default()
+    };
+    let state = PolicyState::default();
+
+    // Available memory is above user threshold (e.g. 2000 MB), but kernel signals low memory
+    let sample = create_sample(2000, 1000, 1000, 5000, 20000);
+
+    let decision = decide(&sample, &cfg, &state, false, Some(100), true);
+
+    match decision {
+        PolicyDecision::TrimBackgroundApps { target_pids, .. } => {
+            assert!(target_pids.contains(&200));
+        }
+        other => panic!(
+            "Expected TrimBackgroundApps triggered by kernel signal, got {:?}",
+            other
+        ),
     }
 }
 
