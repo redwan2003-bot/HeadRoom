@@ -51,3 +51,24 @@ pub fn is_fullscreen_or_gaming_active() -> bool {
 
     false
 }
+
+/// Returns the process ID of the active foreground window, if one exists.
+pub fn get_foreground_process_id() -> Option<u32> {
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+
+    // SAFETY: GetForegroundWindow returns the top-level active HWND or null.
+    // GetWindowThreadProcessId queries the owning process ID safely into a stack variable.
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        if hwnd.0.is_null() {
+            return None;
+        }
+        let mut pid = 0u32;
+        let _ = GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid > 0 {
+            Some(pid)
+        } else {
+            None
+        }
+    }
+}

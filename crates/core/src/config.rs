@@ -34,18 +34,33 @@ impl Default for Thresholds {
     }
 }
 
+/// Operating mode for Headroom memory management.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum OperatingMode {
+    /// Telemetry and diagnostics only; never acts automatically (Default).
+    #[default]
+    Monitor,
+    /// Shows notifications / prompts when actions are recommended.
+    AskFirst,
+    /// Executes safe cleaning actions automatically.
+    Automatic,
+}
+
 /// Persistent user configuration for Headroom.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Config {
     /// Schema version for migrations.
     pub schema_version: u32,
+    /// Operating mode (Monitor, AskFirst, Automatic).
+    #[serde(default)]
+    pub mode: OperatingMode,
     /// Telemetry polling interval in milliseconds.
     pub sample_interval_ms: u32,
     /// Consecutive samples required to trigger state transition (hysteresis).
     pub hysteresis_samples: u32,
     /// Diagnostic and policy thresholds.
     pub thresholds: Thresholds,
-    /// Automatic cleaning enabled (default: false, monitor only).
+    /// Automatic cleaning enabled (legacy flag; synced with mode == Automatic).
     pub auto_clean_enabled: bool,
     /// Opt-in gamer stutter reduction profile (default: false).
     pub stutter_profile_enabled: bool,
@@ -57,6 +72,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             schema_version: CURRENT_SCHEMA_VERSION,
+            mode: OperatingMode::Monitor,
             sample_interval_ms: 1000,
             hysteresis_samples: 3,
             thresholds: Thresholds::default(),

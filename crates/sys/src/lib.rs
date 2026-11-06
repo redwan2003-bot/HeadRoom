@@ -13,7 +13,7 @@ pub mod undocumented;
 
 pub use counters::{MemoryCountersSnapshot, PdhQueryManager};
 pub use error::SysError;
-pub use notification::is_fullscreen_or_gaming_active;
+pub use notification::{get_foreground_process_id, is_fullscreen_or_gaming_active};
 pub use perf_info::{query_performance_info, SystemPerformanceSnapshot};
 pub use processes::{query_process_consumers, set_process_memory_priority, trim_process};
 pub use undocumented::{execute_memory_list_command, MemoryListCommand};

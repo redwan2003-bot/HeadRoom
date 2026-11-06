@@ -76,3 +76,33 @@ This log records architectural decisions, API references, documentation URLs, an
 - **Context**: Requirement to prove cleaning results and disprove "placebo cleaner" claims.
 - **Decision**: Append-only JSON Lines format written to `%LOCALAPPDATA%\Headroom\receipts.jsonl`.
 - **Rationale**: Versioned schema with before/after memory, duration, and readback metrics provides an auditable receipt for every automated or manual action.
+
+
+---
+
+## Phase 3: Policy, Modes, History & Benchmark
+
+### ADR-0008: Pure Functional Policy Engine (`crates/core`)
+- **Date**: 2026-11-06
+- **Status**: Accepted
+- **Context**: Autonomous and recommendation logic for Headroom.
+- **Decision**: Implemented as pure function `decide(&sample, &cfg, &state, is_fullscreen, foreground_pid) -> PolicyDecision`. Precedence:
+  1. Commit Risk: Warn, list top committers, NEVER clean.
+  2. Available RAM low: Trim background apps (protect foreground window, skip exclusions).
+  3. Free low, standby large & Stutter Profile active: Purge low-priority standby.
+  4. Otherwise: Do nothing.
+- **Rationale**: Strict precedence guarantees zero-harm safety. Pure functional architecture ensures full testability against recorded fixtures without mock objects or OS side effects.
+
+### ADR-0009: Pre-Allocated In-Memory History Ring Buffer (`crates/core`)
+- **Date**: 2026-11-06
+- **Status**: Accepted
+- **Context**: 24-hour telemetry trend display without increasing agent footprint.
+- **Decision**: Pre-allocated fixed dual-ring buffer (600 slots at 1-sec resolution for 10 min, 1440 slots at 1-min resolution for 24h) occupying under 50 KB total RAM.
+- **Rationale**: Zero heap allocations at runtime ensures agent stability even in near-OOM conditions.
+
+### ADR-0010: Locked Benchmark Methodology (`docs/BENCHMARK.md`)
+- **Date**: 2026-11-06
+- **Status**: Accepted
+- **Context**: Verifying whether aggressive memory cleaning yields tangible benefits or causes performance regressions.
+- **Decision**: Locked pass criteria: median app relaunch time and total hard faults within 5% of plain Windows across 4 GB and 8 GB VMs. Automatic mode remains experimental if this threshold is not met.
+- **Rationale**: Prevents post-hoc metric tuning and ensures claims remain strictly evidence-based.
