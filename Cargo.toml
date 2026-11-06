@@ -2,8 +2,12 @@
 members = [
     "crates/core",
     "crates/sys",
+    "crates/ipc",
+    "crates/engine",
+    "crates/broker",
     "crates/agent",
     "crates/dashboard",
+    "crates/cli",
     "spikes/spike1_counters",
     "spikes/spike2_priv_actions",
     "spikes/spike3_commit_invariant",

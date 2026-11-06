@@ -1,0 +1,17 @@
+[package]
+name = "headroom-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+headroom-core = { path = "../core" }
+headroom-sys = { path = "../sys" }
+headroom-ipc = { path = "../ipc" }
+headroom-engine = { path = "../engine" }
+serde_json = "1.0"
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_System_Pipes",
+    "Win32_Storage_FileSystem",
+] }

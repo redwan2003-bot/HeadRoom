@@ -50,3 +50,29 @@ This log records architectural decisions, API references, documentation URLs, an
 - **References**:
   - Geoff Chappell NT System Information: https://www.geoffchappell.com/studies/windows/km/ntoskrnl/api/ex/sysinfo/memory_list.htm
   - Process Hacker / System Informer reference data on SystemMemoryListInformation.
+
+
+---
+
+## Phase 2: Clean Engine, IPC Protocol & Broker
+
+### ADR-0005: Fixed-Size Binary Named Pipe Protocol (`headroom-ipc`)
+- **Date**: 2026-11-06
+- **Status**: Accepted
+- **Context**: Inter-process communication between unelevated clients (agent, CLI, dashboard) and the privileged broker service.
+- **Decision**: 12-byte fixed-size binary request (`u32` magic, `u8` version, `u8` action, `u16` padding, `u32` optional PID), 18-byte fixed-size binary response (`u32` magic, `u8` version, `u8` padding, `u32` status, `u32` ntstatus, `u64` duration_us).
+- **Rationale**: Eliminates string injection vulnerabilities, arbitrary command execution, path traversal, and dynamic allocation attacks. Fuzzed against 10,000 randomized binary permutations.
+
+### ADR-0006: Broker Security Hardening & Rate Limiting (`headroom-broker`)
+- **Date**: 2026-11-06
+- **Status**: Accepted
+- **Context**: Running as a high-integrity service on Windows.
+- **Decision**: Restrict pipe access with `PIPE_REJECT_REMOTE_CLIENTS`, `FILE_FLAG_FIRST_PIPE_INSTANCE`, and enforce a mandatory 15-second cooldown in the broker itself against repeated destructive actions (`PurgeStandby`, `FlushModifiedList`, `EmptyWorkingSets`).
+- **Rationale**: Mitigates local Denial-of-Service and thrashing from unprivileged callers.
+
+### ADR-0007: Receipts Audit Logging (`headroom-engine`)
+- **Date**: 2026-11-06
+- **Status**: Accepted
+- **Context**: Requirement to prove cleaning results and disprove "placebo cleaner" claims.
+- **Decision**: Append-only JSON Lines format written to `%LOCALAPPDATA%\Headroom\receipts.jsonl`.
+- **Rationale**: Versioned schema with before/after memory, duration, and readback metrics provides an auditable receipt for every automated or manual action.

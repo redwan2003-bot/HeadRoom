@@ -91,3 +91,116 @@ pub fn query_process_consumers(limit: usize) -> Result<Vec<ProcessConsumer>, Sys
 
     Ok(consumers)
 }
+
+/// Trims the working set of a specific process.
+///
+/// Requires PROCESS_SET_QUOTA | PROCESS_QUERY_LIMITED_INFORMATION rights.
+pub fn trim_process(pid: u32) -> Result<(), SysError> {
+    use windows::Win32::System::ProcessStatus::EmptyWorkingSet;
+    use windows::Win32::System::Threading::PROCESS_SET_QUOTA;
+
+    // SAFETY: OpenProcess with PROCESS_SET_QUOTA | PROCESS_QUERY_LIMITED_INFORMATION
+    // allows calling EmptyWorkingSet on processes running in the same user session.
+    let h_proc = unsafe {
+        OpenProcess(
+            PROCESS_SET_QUOTA | PROCESS_QUERY_LIMITED_INFORMATION,
+            false,
+            pid,
+        )
+    };
+
+    let handle = match h_proc {
+        Ok(h) => h,
+        Err(_) => {
+            let err = unsafe { GetLastError() };
+            return Err(SysError::from_win32(
+                "OpenProcess(PROCESS_SET_QUOTA)",
+                err.0,
+            ));
+        }
+    };
+
+    // SAFETY: handle is a valid process handle with PROCESS_SET_QUOTA.
+    let trim_res = unsafe { EmptyWorkingSet(handle) };
+    let trim_err = if trim_res.is_err() {
+        Some(unsafe { GetLastError() })
+    } else {
+        None
+    };
+
+    // SAFETY: Close process handle.
+    unsafe {
+        let _ = CloseHandle(handle);
+    }
+
+    if let Some(err) = trim_err {
+        Err(SysError::from_win32("EmptyWorkingSet", err.0))
+    } else {
+        Ok(())
+    }
+}
+
+/// Sets memory priority for a specific process (e.g., MEMORY_PRIORITY_VERY_LOW = 1).
+///
+/// Requires PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION rights.
+pub fn set_process_memory_priority(pid: u32, priority: u32) -> Result<(), SysError> {
+    use windows::Win32::System::Threading::{
+        ProcessMemoryPriority, SetProcessInformation, MEMORY_PRIORITY, MEMORY_PRIORITY_INFORMATION,
+        PROCESS_SET_INFORMATION,
+    };
+
+    // SAFETY: OpenProcess with PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION
+    // allows setting memory priority on user-owned processes.
+    let h_proc = unsafe {
+        OpenProcess(
+            PROCESS_SET_INFORMATION | PROCESS_QUERY_LIMITED_INFORMATION,
+            false,
+            pid,
+        )
+    };
+
+    let handle = match h_proc {
+        Ok(h) => h,
+        Err(_) => {
+            let err = unsafe { GetLastError() };
+            return Err(SysError::from_win32(
+                "OpenProcess(PROCESS_SET_INFORMATION)",
+                err.0,
+            ));
+        }
+    };
+
+    let mem_prio = MEMORY_PRIORITY_INFORMATION {
+        MemoryPriority: MEMORY_PRIORITY(priority),
+    };
+
+    // SAFETY: handle is valid; pointer and size match MEMORY_PRIORITY_INFORMATION struct.
+    let set_res = unsafe {
+        SetProcessInformation(
+            handle,
+            ProcessMemoryPriority,
+            &mem_prio as *const _ as *const std::ffi::c_void,
+            size_of::<MEMORY_PRIORITY_INFORMATION>() as u32,
+        )
+    };
+
+    let set_err = if set_res.is_err() {
+        Some(unsafe { GetLastError() })
+    } else {
+        None
+    };
+
+    // SAFETY: Close process handle.
+    unsafe {
+        let _ = CloseHandle(handle);
+    }
+
+    if let Some(err) = set_err {
+        Err(SysError::from_win32(
+            "SetProcessInformation(ProcessMemoryPriority)",
+            err.0,
+        ))
+    } else {
+        Ok(())
+    }
+}
