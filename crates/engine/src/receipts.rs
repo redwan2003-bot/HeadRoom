@@ -1,7 +1,7 @@
 //! Verifiable clean audit receipts logger.
 //!
 //! # Receipt Design
-//! Writes JSON Lines to `%LOCALAPPDATA%\Headroom\receipts.jsonl` with rotation.
+//! Writes JSON Lines to `%LOCALAPPDATA%\Headroom\receipts.jsonl` (or `./receipts.jsonl` in portable mode).
 //! Every receipt includes memory freed, commit deltas, baseline page-in rates,
 //! and subsequent read-back estimates with documented confidence notes.
 
@@ -61,21 +61,24 @@ impl CleanReceipt {
             commit_after_mb: commit_after / (1024 * 1024),
             baseline_pagein_rate: baseline_pagein,
             readback_60s_estimate: readback_estimate,
-            confidence_note: "Read-back is a system-wide estimate rather than exclusively attributable to this clean.".to_string(),
+            confidence_note:
+                "Read-back estimate is system-wide across all processes over 60 seconds."
+                    .to_string(),
         }
     }
 }
 
-/// Appends a receipt to the receipts log with automatic size-based rotation.
-pub fn append_receipt(receipt: &CleanReceipt) -> Result<(), std::io::Error> {
+/// Appends an audit receipt to the receipts log with size-based rotation.
+pub fn append_receipt(receipt: &CleanReceipt) -> std::io::Result<()> {
     let path = get_receipts_path();
+
     if let Some(parent) = path.parent() {
-        let _ = create_dir_all(parent);
+        create_dir_all(parent)?;
     }
 
     // Rotate if larger than 5 MB
-    if let Ok(metadata) = std::fs::metadata(&path) {
-        if metadata.len() > 5 * 1024 * 1024 {
+    if let Ok(meta) = std::fs::metadata(&path) {
+        if meta.len() > 5 * 1024 * 1024 {
             let mut rotated = path.clone();
             rotated.set_extension("jsonl.1");
             let _ = std::fs::rename(&path, rotated);
@@ -92,6 +95,14 @@ pub fn append_receipt(receipt: &CleanReceipt) -> Result<(), std::io::Error> {
 }
 
 fn get_receipts_path() -> PathBuf {
+    if headroom_core::is_portable_mode() {
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(parent) = exe_path.parent() {
+                return parent.join("receipts.jsonl");
+            }
+        }
+    }
+
     if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
         PathBuf::from(local_appdata)
             .join("Headroom")

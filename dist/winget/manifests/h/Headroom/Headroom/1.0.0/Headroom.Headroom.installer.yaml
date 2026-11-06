@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+
+PackageIdentifier: Headroom.Headroom
+PackageVersion: 1.0.0
+InstallerLocale: en-US
+InstallerType: inno
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+  - silentWithProgress
+UpgradeBehavior: install
+Commands:
+  - headroom
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/redwan2003-bot/HeadRoom/releases/download/v1.0.0/Headroom-Setup-v1.0.0.exe
+    InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000 # Computed during GitHub Release
+  - Architecture: arm64
+    InstallerUrl: https://github.com/redwan2003-bot/HeadRoom/releases/download/v1.0.0/Headroom-Setup-arm64-v1.0.0.exe
+    InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+ManifestType: installer
+ManifestVersion: 1.6.0

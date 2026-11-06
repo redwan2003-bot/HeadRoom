@@ -123,3 +123,41 @@ impl Config {
         serde_json::to_string_pretty(self)
     }
 }
+
+/// Returns the configuration file path.
+///
+/// In portable mode (if `headroom.json` or a `portable` marker file exists adjacent
+/// to the executable), the application directory is used. Otherwise, defaults to
+/// `%LOCALAPPDATA%\Headroom\config.json`.
+pub fn get_config_path() -> std::path::PathBuf {
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(parent) = exe_path.parent() {
+            let portable_cfg = parent.join("headroom.json");
+            if portable_cfg.exists() {
+                return portable_cfg;
+            }
+            let portable_marker = parent.join("portable");
+            if portable_marker.exists() {
+                return portable_cfg;
+            }
+        }
+    }
+
+    if let Ok(local_appdata) = std::env::var("LOCALAPPDATA") {
+        std::path::PathBuf::from(local_appdata)
+            .join("Headroom")
+            .join("config.json")
+    } else {
+        std::path::PathBuf::from("config.json")
+    }
+}
+
+/// Checks whether Headroom is running in portable mode.
+pub fn is_portable_mode() -> bool {
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(parent) = exe_path.parent() {
+            return parent.join("headroom.json").exists() || parent.join("portable").exists();
+        }
+    }
+    false
+}

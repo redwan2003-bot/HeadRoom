@@ -1,0 +1,96 @@
+name: Headroom CI & Release Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  quality-and-test:
+    name: Quality Checks & Unit Tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@cargo-deny
+
+      - name: Verify Formatting
+        run: cargo fmt --all --check
+
+      - name: Run Clippy Linter
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Execute Workspace Tests
+        run: cargo test --workspace
+
+      - name: Audit Dependency Licenses & Advisories
+        run: cargo deny check
+
+  build-matrix:
+    name: Build & Budget Verification (${{ matrix.target }})
+    needs: quality-and-test
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        target:
+          - x86_64-pc-windows-msvc
+          - aarch64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build Release Binaries
+        run: cargo build --release --target ${{ matrix.target }} -p headroom-agent -p headroom-dashboard -p headroom-cli -p headroom-broker
+
+      - name: Enforce Executable Size Budget (< 2.0 MB)
+        shell: pwsh
+        run: |
+          $maxSizeBytes = 2 * 1024 * 1024
+          $binDir = "target/${{ matrix.target }}/release"
+          $binaries = @("headroom-agent.exe", "headroom-dashboard.exe", "headroom-cli.exe", "headroom-broker.exe")
+          
+          foreach ($bin in $binaries) {
+              $path = Join-Path $binDir $bin
+              if (Test-Path $path) {
+                  $size = (Get-Item $path).Length
+                  $sizeKB = [Math]::Round($size / 1024, 1)
+                  Write-Host "Binary $bin : $sizeKB KB"
+                  if ($size -ge $maxSizeBytes) {
+                      Write-Error "BUDGET VIOLATION: $bin is $size bytes (exceeds 2.0 MB budget)!"
+                      exit 1
+                  }
+              }
+          }
+          Write-Host "[SUCCESS] All executables strictly within the 2.0 MB budget."
+
+      - name: Generate SHA256 Checksums
+        shell: pwsh
+        run: |
+          $binDir = "target/${{ matrix.target }}/release"
+          Get-FileHash (Get-Item "$binDir/*.exe") -Algorithm SHA256 |
+              Select-Object Hash, @{Name="FileName";Expression={Split-Path $_.Path -Leaf}} |
+              Format-Table -AutoSize | Out-String | Write-Host
+
+      - name: Archive Release Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: headroom-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/release/headroom-agent.exe
+            target/${{ matrix.target }}/release/headroom-dashboard.exe
+            target/${{ matrix.target }}/release/headroom-cli.exe
+            target/${{ matrix.target }}/release/headroom-broker.exe

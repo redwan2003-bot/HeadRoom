@@ -1,70 +1,106 @@
-# Headroom
+# Headroom (v1.0)
 
-Headroom is an open-source Windows memory diagnostic and management utility designed for low-RAM PCs and stutter-sensitive workloads.
+[![CI](https://github.com/redwan2003-bot/HeadRoom/actions/workflows/ci.yml/badge.svg)](https://github.com/redwan2003-bot/HeadRoom/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Platform: Windows](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-0078D6.svg)](https://microsoft.com/windows)
+
+Headroom is an open-source, evidence-based Windows memory diagnostic and management utility designed for low-RAM PCs and gamers.
 
 > [!NOTE]
-> Headroom was inspired by tools like Mem Reduct, but contains **none of its code** (100% clean-room MIT implementation). Unsigned or newly released binaries may cause Windows SmartScreen to display a warning.
+> **Provenance & Clean-Room Guarantee**: Headroom was inspired by the utility of tools like Mem Reduct, but contains **none of its code** (100% clean-room MIT implementation; zero GPL code). As with any newly released open-source binary without commercial code-signing certificates, Windows SmartScreen may display a standard unrecognized publisher prompt on initial launch. See [`docs/SIGNING.md`](docs/SIGNING.md).
 
 ---
 
-## Philosophy & Core Goals
+## Why Headroom?
 
-A higher free-RAM number proves nothing if Windows is merely caching useful data. Headroom focuses on:
+Most RAM cleaners boast large "freed memory" numbers by aggressively purging Windows standby caches. This creates a harmful placebo effect: while physical free RAM looks higher, cached file pages are discarded, causing severe disk thrashing and app relaunch stutters as Windows is forced to re-read evicted data from disk.
 
-1. **Diagnose**: Distinguish true memory exhaustion from healthy system caching (standby lists).
-2. **Conservative Action**: Apply the least disruptive action only when genuine pressure demands it (default mode is monitor-only).
-3. **Transparent Receipts**: Emit verifiable receipts for every clean event detailing memory freed and subsequent 60-second disk page-in penalty.
-
----
-
-## Download & Releases
-
-Pre-built binaries (including standalone portable `.exe` and installer packages) will be published under the [Releases](https://github.com/redwan2003-bot/Mem_Reduct/releases) section upon reaching release milestones (Phase 4 / v1.0).
+Headroom takes a radically different, evidence-based approach:
+1. **Diagnose**: Distinguishes true memory exhaustion from healthy system caching (Standby list).
+2. **Conservative Action**: Default mode is **Monitor Only**. It never touches memory unless you opt in.
+3. **Safety Invariants**: Never cleans under Commit Risk (which cannot be solved by trimming) and unconditionally pauses during fullscreen games.
+4. **Verifiable Receipts**: Emits an audit receipt (`receipts.jsonl`) for every clean showing memory freed, commit deltas, and the subsequent 60-second disk read-back impact.
 
 ---
 
-## Building from Source
-
-### Prerequisites
-- Windows 10 (version 22H2+) or Windows 11 (x64 / ARM64).
-- Rust 1.80+ (`stable-x86_64-pc-windows-msvc`).
-- Microsoft C++ Build Tools / Visual Studio with Windows SDK.
-
-### Build Command
-```powershell
-cargo build --release
-```
-
-Compiled binaries will be available in `target/release/`.
-
----
-
-## Repository Structure
+## Architecture & Binary Suite
 
 ```text
-headroom/
-  AGENTS.md                  Engineering constraints and instructions
-  Cargo.toml                 Workspace root configuration
-  deny.toml                  License and dependency checking rules
-  LICENSE                    MIT License
-  README.md                  Project overview and documentation
-  crates/
-    core/                    Pure domain models, state classifier, policy, receipts (no unsafe, no Win32)
-    sys/                     Safe wrappers over Win32/NT APIs (contains audited unsafe)
-    engine/                  Action executors, cooldowns, and safety timeouts
-    ipc/                     Named pipe protocol and message validators
-    broker/                  Privileged Windows Service helper
-    agent/                   Tray monitor agent (Win32)
-    dashboard/               On-demand status and control window
-    cli/                     Non-interactive CLI for scripting
-  docs/
-    PLAN.md                  Full project specification
-    STATUS.md                Phase tracking and next steps
-    DECISIONS.md             Architecture Decision Records (ADRs)
-    SECURITY.md              IPC security model and threat analysis
-    BENCHMARK.md             Empirical test harness and results
-  spikes/                    Throwaway Phase 0 validation programs
-  bench/                     Workloads and trace scripts
+User session (Unelevated)                Windows Service / Helper
+  Tray Agent  ───────┐                      Broker Service
+  Dashboard   ───────┼─── Named Pipe ─────►   (Privileged SeProfileSingleProcessPrivilege)
+  CLI Tool    ───────┘    (Fixed 12-byte)       │
+       │                                        ▼
+       ▼                                  NtSetSystemInformation (Class 80)
+  Win32 / PSAPI Telemetry                 (Standby purge, working sets)
+```
+
+| Binary | Role | Executable Size |
+|---|---|---|
+| `headroom-agent.exe` | Persistent, ultra-lightweight tray agent (< 1.5 MB private RAM, 0% CPU) | **387.5 KB** |
+| `headroom-dashboard.exe` | On-demand diagnostic window with dark theme and process breakdowns (< 250 ms launch) | **295.0 KB** |
+| `headroom-cli.exe` | Scriptable command-line tool with `--json` output and stable exit codes | **337.5 KB** |
+| `headroom-broker.exe` | Windows service helper for elevated NT memory operations in VM environments | **258.0 KB** |
+
+---
+
+## Installation & Portable Mode
+
+### Portable Mode (No Installation Needed)
+Simply copy the binaries into any folder. If a file named `portable` or `headroom.json` exists in the folder, Headroom runs in standalone portable mode, storing configuration and receipts locally without touching `%LOCALAPPDATA%`.
+
+### User-Level Clean Installation (No Admin Rights Required)
+To install Headroom into `%LOCALAPPDATA%\Programs\Headroom` with Start Menu integration:
+```powershell
+powershell -ExecutionPolicy Bypass -File dist\install.ps1
+```
+
+### Complete Clean Uninstallation
+To cleanly uninstall Headroom and leave zero files or registry keys behind:
+```powershell
+powershell -ExecutionPolicy Bypass -File dist\uninstall.ps1 -PurgeUserData
+```
+
+### Windows Package Manager (Winget)
+```powershell
+winget install Headroom.Headroom
+```
+
+---
+
+## Command-Line Usage
+
+```powershell
+# Query current diagnostic state
+headroom status
+
+# Output machine-readable JSON
+headroom status --json
+
+# Trigger clean action
+headroom clean standby-low --json
+```
+
+---
+
+## Documentation
+
+- [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md): Comprehensive guide to memory states, modes, and receipt analysis.
+- [`docs/SECURITY.md`](docs/SECURITY.md): Threat modeling, named pipe security descriptors, and validation.
+- [`docs/BENCHMARK.md`](docs/BENCHMARK.md): Workload methodologies, empirical test harnesses, and locked pass criteria.
+- [`docs/DECISIONS.md`](docs/DECISIONS.md): Architectural Decision Records (ADR-0001 through ADR-0010).
+- [`docs/SIGNING.md`](docs/SIGNING.md): SignPath Foundation application template for Authenticode signing.
+
+---
+
+## Quality & Standards
+
+Every milestone passes the mandatory quality test suite:
+```powershell
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo deny check
 ```
 
 ---
