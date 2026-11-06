@@ -1,0 +1,18 @@
+name: Publish to Windows Package Manager (Winget)
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publish-winget:
+    name: Submit Winget Manifest
+    runs-on: windows-latest
+    steps:
+      - name: Publish to microsoft/winget-pkgs
+        uses: vedantmgoyal2009/winget-releaser@v2
+        with:
+          identifier: Headroom.Headroom
+          version: ${{ github.event.release.tag_name }}
+          token: ${{ secrets.WINGET_TOKEN }}

@@ -207,3 +207,38 @@ fn test_history_ring_buffer_rollover() {
     let low_res = history.get_history_24_hours();
     assert_eq!(low_res.len(), low_count);
 }
+
+#[test]
+fn test_config_exclusion_management() {
+    let mut cfg = Config::default();
+
+    // Default exclusions include "explorer.exe"
+    assert!(cfg.is_excluded("explorer.exe"));
+    assert!(cfg.is_excluded("EXPLORER.EXE")); // Case-insensitive
+
+    // Add new exclusion
+    assert!(cfg.add_exclusion("game.exe"));
+    assert!(!cfg.add_exclusion("GAME.EXE")); // Duplicate prevented
+    assert!(cfg.is_excluded("game.exe"));
+
+    // Toggle exclusion
+    let now_excluded = cfg.toggle_exclusion("game.exe");
+    assert!(!now_excluded);
+    assert!(!cfg.is_excluded("game.exe"));
+
+    let now_excluded_again = cfg.toggle_exclusion("game.exe");
+    assert!(now_excluded_again);
+    assert!(cfg.is_excluded("game.exe"));
+
+    // Remove exclusion
+    assert!(cfg.remove_exclusion("game.exe"));
+    assert!(!cfg.remove_exclusion("game.exe")); // Already removed
+}
+
+#[test]
+fn test_config_load_or_default() {
+    let (cfg, warning) = Config::load_or_default();
+    assert_eq!(warning, None);
+    assert_eq!(cfg.schema_version, 1);
+    assert!(cfg.is_excluded("explorer.exe"));
+}

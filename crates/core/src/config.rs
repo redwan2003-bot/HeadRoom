@@ -118,9 +118,71 @@ impl Config {
         }
     }
 
+    /// Loads configuration from disk (`get_config_path()`), falling back safely
+    /// to defaults if the file does not exist or fails to parse.
+    pub fn load_or_default() -> (Self, Option<String>) {
+        let path = get_config_path();
+        if path.exists() {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                return Self::from_json_with_fallback(&content);
+            }
+        }
+        (Self::default(), None)
+    }
+
     /// Serializes configuration to pretty-printed JSON.
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
+    }
+
+    /// Checks if a process name is excluded (case-insensitive).
+    pub fn is_excluded(&self, proc_name: &str) -> bool {
+        self.exclusions
+            .iter()
+            .any(|ex| ex.eq_ignore_ascii_case(proc_name))
+    }
+
+    /// Adds a process name to the exclusion list if not already present.
+    pub fn add_exclusion(&mut self, proc_name: &str) -> bool {
+        if !self.is_excluded(proc_name) {
+            self.exclusions.push(proc_name.to_lowercase());
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Removes a process name from the exclusion list.
+    pub fn remove_exclusion(&mut self, proc_name: &str) -> bool {
+        let initial_len = self.exclusions.len();
+        self.exclusions
+            .retain(|ex| !ex.eq_ignore_ascii_case(proc_name));
+        self.exclusions.len() != initial_len
+    }
+
+    /// Toggles exclusion status for a process name.
+    /// Returns `true` if process is now excluded, `false` if now included.
+    pub fn toggle_exclusion(&mut self, proc_name: &str) -> bool {
+        if self.is_excluded(proc_name) {
+            self.remove_exclusion(proc_name);
+            false
+        } else {
+            self.add_exclusion(proc_name);
+            true
+        }
+    }
+
+    /// Saves the current configuration to disk at `get_config_path()`.
+    pub fn save_to_file(&self) -> std::io::Result<()> {
+        let path = get_config_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let json_str = self
+            .to_json()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        std::fs::write(&path, json_str)?;
+        Ok(())
     }
 }
 

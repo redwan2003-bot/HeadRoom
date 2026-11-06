@@ -9,7 +9,7 @@
 //! - Top memory consumer processes with private and working set usage.
 //! - Exits completely on window close, releasing 100% of its memory.
 
-use headroom_core::{classify, Config, MemorySample, StateDiagnosis, SystemState};
+use headroom_core::{classify, Config, MemoryHistory, MemorySample, StateDiagnosis, SystemState};
 use headroom_engine::CleaningEngine;
 use headroom_ipc::ActionKind;
 use headroom_sys::SystemSampler;
@@ -19,9 +19,10 @@ use windows::core::w;
 use windows::Win32::Foundation::{COLORREF, HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_DARK_MODE};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreateSolidBrush, DeleteDC,
-    DeleteObject, DrawTextW, EndPaint, FillRect, InvalidateRect, SelectObject, SetBkMode,
-    SetTextColor, DT_LEFT, DT_NOPREFIX, DT_WORDBREAK, HDC, PAINTSTRUCT, SRCCOPY, TRANSPARENT,
+    BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreatePen, CreateSolidBrush,
+    DeleteDC, DeleteObject, DrawTextW, EndPaint, FillRect, FrameRect, InvalidateRect, LineTo,
+    MoveToEx, SelectObject, SetBkMode, SetTextColor, DT_LEFT, DT_NOPREFIX, DT_WORDBREAK, HDC,
+    PAINTSTRUCT, PS_SOLID, SRCCOPY, TRANSPARENT,
 };
 use windows::Win32::UI::HiDpi::{
     SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
@@ -36,12 +37,14 @@ use windows::Win32::UI::WindowsAndMessaging::{
 const TIMER_REFRESH_ID: usize = 1;
 const ID_BTN_TRIM: usize = 2001;
 const ID_BTN_PURGE_LOW: usize = 2002;
+const ID_BTN_TOGGLE_EXCLUDE: usize = 2003;
 
 struct DashboardState {
     sampler: SystemSampler,
     config: Config,
     sample: Option<MemorySample>,
     diagnosis: Option<StateDiagnosis>,
+    history: MemoryHistory,
     engine: Arc<CleaningEngine>,
     status_message: Arc<Mutex<Option<String>>>,
 }
@@ -60,6 +63,7 @@ unsafe extern "system" fn window_proc(
                 let state = &mut *state_ptr;
                 if let Ok(sample) = state.sampler.sample(6) {
                     let diag = classify(&sample, &state.config);
+                    state.history.record(&sample);
                     state.sample = Some(sample);
                     state.diagnosis = Some(diag);
                     let _ = InvalidateRect(hwnd, None, false);
@@ -70,14 +74,19 @@ unsafe extern "system" fn window_proc(
         WM_COMMAND => {
             let cmd_id = wparam.0 & 0xFFFF;
             if !state_ptr.is_null() {
-                let state = &*state_ptr;
+                let state = &mut *state_ptr;
                 match cmd_id {
                     ID_BTN_TRIM => {
                         let engine = Arc::clone(&state.engine);
                         let status = Arc::clone(&state.status_message);
                         let cfg = state.config.clone();
                         if let Some(s) = &state.sample {
-                            let pids: Vec<u32> = s.top_consumers.iter().map(|p| p.pid).collect();
+                            let pids: Vec<u32> = s
+                                .top_consumers
+                                .iter()
+                                .filter(|p| !cfg.is_excluded(&p.name))
+                                .map(|p| p.pid)
+                                .collect();
                             std::thread::spawn(move || {
                                 let mut count = 0;
                                 for pid in pids {
@@ -123,6 +132,36 @@ unsafe extern "system" fn window_proc(
                                 }
                             }
                         });
+                    }
+                    ID_BTN_TOGGLE_EXCLUDE => {
+                        let status = Arc::clone(&state.status_message);
+                        if let Some(s) = &state.sample {
+                            if let Some(top_p) = s.top_consumers.first() {
+                                let proc_name = top_p.name.clone();
+                                let is_now_excluded = state.config.toggle_exclusion(&proc_name);
+                                let save_res = state.config.save_to_file();
+                                let action_str = if is_now_excluded {
+                                    "Excluded"
+                                } else {
+                                    "Un-excluded"
+                                };
+                                match save_res {
+                                    Ok(_) => {
+                                        *status.lock().unwrap() = Some(format!(
+                                            "[+] {} '{}' from trimming (saved to config)",
+                                            action_str, proc_name
+                                        ));
+                                    }
+                                    Err(e) => {
+                                        *status.lock().unwrap() = Some(format!(
+                                            "[!] {} '{}' (config save warning: {})",
+                                            action_str, proc_name, e
+                                        ));
+                                    }
+                                }
+                                let _ = InvalidateRect(hwnd, None, false);
+                            }
+                        }
                     }
                     _ => {}
                 }
@@ -287,27 +326,81 @@ fn paint_dashboard(hwnd: HWND, hdc: HDC, state_ptr: *const DashboardState) {
                     y += 22;
                 }
 
-                // 3. Top Process Consumers
-                y += 10;
+                // 3. Mini GDI Sparkline (10-minute rolling RAM In-Use trend)
+                y += 6;
+                let pts = dash.history.get_recent_10_minutes();
+                let (cur_pct, peak_pct) = if !pts.is_empty() && total_mb > 0 {
+                    let mut max_in_use = 0u64;
+                    for pt in &pts {
+                        let u = total_mb.saturating_sub(pt.available_mb as u64);
+                        if u > max_in_use {
+                            max_in_use = u;
+                        }
+                    }
+                    let last = pts.last().unwrap();
+                    let cur = total_mb.saturating_sub(last.available_mb as u64);
+                    (
+                        (cur as f64 / total_mb as f64) * 100.0,
+                        (max_in_use as f64 / total_mb as f64) * 100.0,
+                    )
+                } else {
+                    (
+                        (in_use_mb as f64 / total_mb.max(1) as f64) * 100.0,
+                        (in_use_mb as f64 / total_mb.max(1) as f64) * 100.0,
+                    )
+                };
+
+                let chart_title = format!(
+                    "RAM In-Use Trend (10-min rolling): Current: {:.1}% | Peak: {:.1}%",
+                    cur_pct, peak_pct
+                );
+                let mut wide_chart_title: Vec<u16> = chart_title.encode_utf16().collect();
+                let mut r_chart_title = RECT {
+                    left: 25,
+                    top: y,
+                    right: width - 25,
+                    bottom: y + 18,
+                };
+                let _ = DrawTextW(
+                    mem_dc,
+                    &mut wide_chart_title,
+                    &mut r_chart_title,
+                    DT_LEFT | DT_NOPREFIX,
+                );
+                y += 20;
+
+                let spark_rect = RECT {
+                    left: 25,
+                    top: y,
+                    right: width - 25,
+                    bottom: y + 46,
+                };
+                paint_sparkline(mem_dc, &spark_rect, &dash.history, total_mb);
+                y += 54;
+
+                // 4. Top Process Consumers
                 let header = "Top Process Memory Consumers:".to_string();
                 let mut wide_hdr: Vec<u16> = header.encode_utf16().collect();
                 let mut r_hdr = RECT {
                     left: 25,
                     top: y,
                     right: width - 25,
-                    bottom: y + 20,
+                    bottom: y + 18,
                 };
                 let _ = DrawTextW(mem_dc, &mut wide_hdr, &mut r_hdr, DT_LEFT | DT_NOPREFIX);
-                y += 24;
+                y += 20;
 
                 let _ = SetTextColor(mem_dc, text_muted);
                 for p in s.top_consumers.iter().take(6) {
+                    let is_ex = dash.config.is_excluded(&p.name);
+                    let ex_tag = if is_ex { " [EXCLUDED]" } else { "" };
                     let proc_line = format!(
-                        "  [{:>5}] {:<24} Private: {:>5} MB  |  Working Set: {:>5} MB",
+                        "  [{:>5}] {:<22} Private: {:>5} MB  |  WS: {:>5} MB{}",
                         p.pid,
                         p.name,
                         p.private_bytes / (1024 * 1024),
-                        p.working_set_bytes / (1024 * 1024)
+                        p.working_set_bytes / (1024 * 1024),
+                        ex_tag
                     );
                     let mut wide_proc: Vec<u16> = proc_line.encode_utf16().collect();
                     let mut r_p = RECT {
@@ -317,19 +410,19 @@ fn paint_dashboard(hwnd: HWND, hdc: HDC, state_ptr: *const DashboardState) {
                         bottom: y + 18,
                     };
                     let _ = DrawTextW(mem_dc, &mut wide_proc, &mut r_p, DT_LEFT | DT_NOPREFIX);
-                    y += 20;
+                    y += 18;
                 }
 
-                // 4. Status Message Feedback
+                // 5. Status Message Feedback
                 if let Ok(guard) = dash.status_message.lock() {
                     if let Some(msg) = guard.as_ref() {
                         let _ = SetTextColor(mem_dc, COLORREF(0x004CAF50));
                         let mut wide_msg: Vec<u16> = msg.encode_utf16().collect();
                         let mut r_msg = RECT {
                             left: 25,
-                            top: y + 6,
+                            top: y + 4,
                             right: width - 25,
-                            bottom: y + 26,
+                            bottom: y + 24,
                         };
                         let _ = DrawTextW(mem_dc, &mut wide_msg, &mut r_msg, DT_LEFT | DT_NOPREFIX);
                     }
@@ -347,6 +440,74 @@ fn paint_dashboard(hwnd: HWND, hdc: HDC, state_ptr: *const DashboardState) {
     }
 }
 
+fn paint_sparkline(mem_dc: HDC, rect: &RECT, history: &MemoryHistory, total_ram_mb: u64) {
+    unsafe {
+        // Dark panel background
+        let bg_brush = CreateSolidBrush(COLORREF(0x00141414));
+        let _ = FillRect(mem_dc, rect, bg_brush);
+        let _ = DeleteObject(bg_brush);
+
+        // Border
+        let border_brush = CreateSolidBrush(COLORREF(0x00333333));
+        let _ = FrameRect(mem_dc, rect, border_brush);
+        let _ = DeleteObject(border_brush);
+
+        if total_ram_mb == 0 {
+            return;
+        }
+
+        let box_w = rect.right - rect.left - 4;
+        let box_h = rect.bottom - rect.top - 4;
+        if box_w <= 10 || box_h <= 10 {
+            return;
+        }
+
+        // Draw 50% dotted grid line
+        let grid_pen = CreatePen(PS_SOLID, 1, COLORREF(0x002A2A2A));
+        if !grid_pen.is_invalid() {
+            let old_pen = SelectObject(mem_dc, grid_pen);
+            let mid_y = rect.top + 2 + box_h / 2;
+            let _ = MoveToEx(mem_dc, rect.left + 2, mid_y, None);
+            let _ = LineTo(mem_dc, rect.right - 2, mid_y);
+            let _ = SelectObject(mem_dc, old_pen);
+            let _ = DeleteObject(grid_pen);
+        }
+
+        let pts = history.get_recent_10_minutes();
+        if pts.is_empty() {
+            return;
+        }
+
+        // Draw Cyan Sparkline (0x00D4BC00 is COLORREF for #00BCD4 Cyan in BGR)
+        let spark_pen = CreatePen(PS_SOLID, 2, COLORREF(0x00D4BC00));
+        if !spark_pen.is_invalid() {
+            let old_pen = SelectObject(mem_dc, spark_pen);
+            let n_pts = pts.len();
+
+            for (i, pt) in pts.iter().enumerate() {
+                let in_use_mb = total_ram_mb.saturating_sub(pt.available_mb as u64);
+                let pct = (in_use_mb as f64 / total_ram_mb as f64).clamp(0.0, 1.0);
+
+                let x = if n_pts <= 1 {
+                    rect.left + 2 + box_w
+                } else {
+                    rect.left + 2 + (i as i32 * box_w) / ((n_pts - 1) as i32)
+                };
+                let y = rect.top + 2 + ((1.0 - pct) * (box_h as f64)) as i32;
+
+                if i == 0 {
+                    let _ = MoveToEx(mem_dc, x, y, None);
+                } else {
+                    let _ = LineTo(mem_dc, x, y);
+                }
+            }
+
+            let _ = SelectObject(mem_dc, old_pen);
+            let _ = DeleteObject(spark_pen);
+        }
+    }
+}
+
 fn main() {
     let start_instant = std::time::Instant::now();
     let is_bench = std::env::args().any(|arg| arg == "--bench");
@@ -356,8 +517,8 @@ fn main() {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
 
-    // 2. Initialize Telemetry & State
-    let config = Config::default();
+    // 2. Initialize Telemetry & State (loading persisted user config)
+    let (config, _) = Config::load_or_default();
     let mut sampler = match SystemSampler::new() {
         Ok(s) => s,
         Err(e) => {
@@ -370,11 +531,17 @@ fn main() {
     let initial_sample = sampler.sample(0).ok();
     let initial_diag = initial_sample.as_ref().map(|s| classify(s, &config));
 
+    let mut history = MemoryHistory::default();
+    if let Some(s) = &initial_sample {
+        history.record(s);
+    }
+
     let dashboard_state = Box::new(DashboardState {
         sampler,
         config,
         sample: initial_sample,
         diagnosis: initial_diag,
+        history,
         engine: Arc::new(CleaningEngine::default()),
         status_message: Arc::new(Mutex::new(None)),
     });
@@ -398,8 +565,8 @@ fn main() {
             WS_OVERLAPPEDWINDOW | WS_VISIBLE,
             120,
             120,
-            640,
-            550,
+            680,
+            600,
             HWND::default(),
             None,
             None,
@@ -421,8 +588,8 @@ fn main() {
             w!("Trim Background Apps"),
             WS_CHILD | WS_VISIBLE,
             25,
-            465,
-            200,
+            515,
+            195,
             32,
             hwnd,
             HMENU(ID_BTN_TRIM as *mut _),
@@ -435,12 +602,27 @@ fn main() {
             w!("BUTTON"),
             w!("Purge Low Standby"),
             WS_CHILD | WS_VISIBLE,
-            235,
-            465,
-            200,
+            230,
+            515,
+            195,
             32,
             hwnd,
             HMENU(ID_BTN_PURGE_LOW as *mut _),
+            HINSTANCE::default(),
+            None,
+        );
+
+        let _ = CreateWindowExW(
+            WINDOW_EX_STYLE(0),
+            w!("BUTTON"),
+            w!("Toggle Exclude Top App"),
+            WS_CHILD | WS_VISIBLE,
+            435,
+            515,
+            215,
+            32,
+            hwnd,
+            HMENU(ID_BTN_TOGGLE_EXCLUDE as *mut _),
             HINSTANCE::default(),
             None,
         );

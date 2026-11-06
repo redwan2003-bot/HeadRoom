@@ -29,18 +29,21 @@ use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::HiDpi::{
     SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    RegisterHotKey, UnregisterHotKey, MOD_CONTROL, MOD_SHIFT,
+};
 use windows::Win32::UI::Shell::{
     Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
     NOTIFYICONDATAW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyMenu, DestroyWindow,
-    DispatchMessageW, GetCursorPos, GetMessageW, GetWindowLongPtrW, LoadIconW, PostQuitMessage,
-    RegisterClassExW, RegisterWindowMessageW, SetForegroundWindow, SetTimer, SetWindowLongPtrW,
-    TrackPopupMenu, TranslateMessage, GWLP_USERDATA, HICON, IDI_APPLICATION, MF_CHECKED,
-    MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, TPM_BOTTOMALIGN, TPM_LEFTALIGN, WINDOW_EX_STYLE,
-    WM_COMMAND, WM_DESTROY, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_RBUTTONUP, WM_TIMER, WM_USER,
-    WNDCLASSEXW, WS_OVERLAPPED,
+    DispatchMessageW, FindWindowW, GetCursorPos, GetMessageW, GetWindowLongPtrW, LoadIconW,
+    PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SetForegroundWindow, SetTimer,
+    SetWindowLongPtrW, ShowWindow, TrackPopupMenu, TranslateMessage, GWLP_USERDATA, HICON,
+    IDI_APPLICATION, MF_CHECKED, MF_SEPARATOR, MF_STRING, MF_UNCHECKED, MSG, SW_RESTORE,
+    TPM_BOTTOMALIGN, TPM_LEFTALIGN, WINDOW_EX_STYLE, WM_COMMAND, WM_DESTROY, WM_HOTKEY,
+    WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_RBUTTONUP, WM_TIMER, WM_USER, WNDCLASSEXW, WS_OVERLAPPED,
 };
 
 use std::alloc::System;
@@ -58,6 +61,7 @@ const ID_TRAY_STUTTER_PROFILE: usize = 1006;
 const ID_TRAY_CLEAN_TRIM: usize = 1007;
 const ID_TRAY_CLEAN_STANDBY_LOW: usize = 1008;
 const ID_TRAY_EXIT: usize = 1009;
+const ID_HOTKEY_DASHBOARD: i32 = 9001;
 const TIMER_SAMPLE_ID: usize = 1;
 
 static mut TASKBAR_CREATED_MSG: u32 = 0;
@@ -170,11 +174,17 @@ unsafe extern "system" fn window_proc(
             }
             LRESULT(0)
         }
+        WM_HOTKEY => {
+            if (wparam.0 as i32) == ID_HOTKEY_DASHBOARD {
+                spawn_or_focus_dashboard();
+            }
+            LRESULT(0)
+        }
         WM_TRAYICON => {
             let event = (lparam.0 & 0xFFFF) as u32;
             match event {
                 WM_LBUTTONUP | WM_LBUTTONDBLCLK => {
-                    spawn_dashboard();
+                    spawn_or_focus_dashboard();
                 }
                 WM_RBUTTONUP => {
                     show_tray_menu(hwnd, app_ptr);
@@ -188,7 +198,7 @@ unsafe extern "system" fn window_proc(
             if !app_ptr.is_null() {
                 let app = &mut *app_ptr;
                 match cmd_id {
-                    ID_TRAY_OPEN_DASHBOARD => spawn_dashboard(),
+                    ID_TRAY_OPEN_DASHBOARD => spawn_or_focus_dashboard(),
                     ID_TRAY_MODE_MONITOR => {
                         app.config.mode = OperatingMode::Monitor;
                         app.config.auto_clean_enabled = false;
@@ -276,6 +286,8 @@ unsafe extern "system" fn window_proc(
             LRESULT(0)
         }
         WM_DESTROY => {
+            // SAFETY: Unregistering the hotkey assigned to this HWND
+            let _ = UnregisterHotKey(hwnd, ID_HOTKEY_DASHBOARD);
             remove_tray_icon(hwnd);
             if !app_ptr.is_null() {
                 let _ = SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
@@ -288,7 +300,18 @@ unsafe extern "system" fn window_proc(
     }
 }
 
-fn spawn_dashboard() {
+fn spawn_or_focus_dashboard() {
+    // SAFETY: Window lookup and activation via standard Win32 APIs
+    unsafe {
+        let hwnd = FindWindowW(w!("HeadroomDashboardClass"), PCWSTR::null());
+        if let Ok(h) = hwnd {
+            if !h.0.is_null() {
+                let _ = ShowWindow(h, SW_RESTORE);
+                let _ = SetForegroundWindow(h);
+                return;
+            }
+        }
+    }
     let _ = Command::new("headroom-dashboard.exe").spawn();
 }
 
@@ -493,8 +516,8 @@ fn main() {
         return;
     }
 
-    // 3. Preallocate State & Sampler
-    let config = Config::default();
+    // 3. Preallocate State & Sampler (loading persisted user config)
+    let (config, _) = Config::load_or_default();
     let filter = HysteresisFilter::new(config.hysteresis_samples);
     let sampler = match SystemSampler::new_lightweight() {
         Ok(s) => s,
@@ -567,6 +590,9 @@ fn main() {
             OperatingMode::Monitor,
             true,
         );
+
+        // Register global hotkey: Ctrl + Shift + H (0x48)
+        let _ = RegisterHotKey(hwnd, ID_HOTKEY_DASHBOARD, MOD_CONTROL | MOD_SHIFT, 0x48);
 
         // 1-second sample timer
         let _ = SetTimer(hwnd, TIMER_SAMPLE_ID, 1000, None);
