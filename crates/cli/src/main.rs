@@ -33,6 +33,7 @@ ACTIONS:
 
 FLAGS:
     --json          Output results in JSON format
+    --version, -V   Print version information
     --help          Show this help message
 "#
     );
@@ -40,6 +41,13 @@ FLAGS:
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args
+        .iter()
+        .any(|a| a == "--version" || a == "-V" || a == "version")
+    {
+        println!("headroom {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     if args.is_empty() || args.iter().any(|a| a == "--help" || a == "-h") {
         print_usage();
         exit(2);
