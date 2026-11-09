@@ -5,6 +5,7 @@
 //! Must only be executed / tested inside a Virtual Machine.
 
 use headroom_ipc::{ActionKind, IpcRequest, IpcResponse, ResponseStatus, PIPE_NAME};
+use headroom_sys::install_crash_handler;
 use headroom_sys::undocumented::{execute_memory_list_command, MemoryListCommand};
 use std::mem::size_of;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -211,6 +212,7 @@ fn run_broker_loop() {
 }
 
 fn main() {
+    install_crash_handler("headroom-broker");
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--console") {
         println!("Headroom Broker (Console Test Mode for VM)");

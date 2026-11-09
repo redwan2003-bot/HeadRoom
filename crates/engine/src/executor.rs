@@ -12,6 +12,8 @@ use crate::receipts::{append_receipt, CleanReceipt};
 use headroom_core::Config;
 use headroom_ipc::{ActionKind, IpcRequest, IpcResponse, ResponseStatus, PIPE_NAME};
 use headroom_sys::perf_info::query_performance_info;
+use headroom_sys::privileges::is_process_elevated;
+use headroom_sys::undocumented::{execute_memory_list_command, MemoryListCommand};
 use headroom_sys::{set_process_memory_priority, trim_process};
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
@@ -157,6 +159,24 @@ impl CleaningEngine {
     }
 
     fn dispatch_broker_ipc(action: ActionKind, target_pid: Option<u32>) -> Result<(), EngineError> {
+        // If current process is elevated, execute directly via NT memory list syscall
+        if is_process_elevated() {
+            let cmd = match action {
+                ActionKind::PurgeLowPriorityStandby => {
+                    Some(MemoryListCommand::PurgeLowPriorityStandbyList)
+                }
+                ActionKind::PurgeStandby => Some(MemoryListCommand::PurgeStandbyList),
+                ActionKind::FlushModifiedList => Some(MemoryListCommand::FlushModifiedList),
+                ActionKind::EmptyWorkingSets => Some(MemoryListCommand::EmptyWorkingSets),
+                _ => None,
+            };
+
+            if let Some(c) = cmd {
+                return execute_memory_list_command(c)
+                    .map(|_| ())
+                    .map_err(|e| EngineError::OsError(format!("Direct execution failed: {}", e)));
+            }
+        }
         // Connect to named pipe \\.\pipe\HeadroomBroker with 5-second timeout
         let req = IpcRequest::new(action, target_pid);
         let req_bytes = req.to_bytes();
@@ -165,7 +185,11 @@ impl CleaningEngine {
             .read(true)
             .write(true)
             .open(PIPE_NAME)
-            .map_err(|e| EngineError::IpcFailed(format!("Broker service not responding: {}", e)))?;
+            .map_err(|_| {
+                EngineError::IpcFailed(
+                    "Broker service not active. Run install.ps1 or run as Administrator for system memory actions.".to_string(),
+                )
+            })?;
 
         client_file
             .write_all(&req_bytes)

@@ -5,18 +5,22 @@
 //! is audited and annotated with a required `// SAFETY:` soundness justification.
 
 pub mod counters;
+pub mod crash_handler;
 pub mod error;
 pub mod notification;
 pub mod perf_info;
+pub mod privileges;
 pub mod processes;
 pub mod undocumented;
 
 pub use counters::{MemoryCountersSnapshot, PdhQueryManager};
+pub use crash_handler::install_crash_handler;
 pub use error::SysError;
 pub use notification::{
     get_foreground_process_id, is_fullscreen_or_gaming_active, MemoryResourceWatcher,
 };
 pub use perf_info::{query_performance_info, SystemPerformanceSnapshot};
+pub use privileges::is_process_elevated;
 pub use processes::{query_process_consumers, set_process_memory_priority, trim_process};
 pub use undocumented::{execute_memory_list_command, MemoryListCommand};
 

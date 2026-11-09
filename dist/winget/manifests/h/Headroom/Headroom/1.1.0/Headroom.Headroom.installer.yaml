@@ -14,7 +14,7 @@ Commands:
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/redwan2003-bot/HeadRoom/releases/download/v1.1.0/Headroom-v1.1.0-windows-x64.zip
-    InstallerSha256: 963028C388A02C8BBA46D9F2E97B61FBF9464BBA85C02AF31BB8949932FD00C5
+    InstallerSha256: B3B2E0E7A56330FE28A8D8532D16CB2AD40033789E92A160AF3C600D3F8C57E3
     NestedInstallerType: portable
     NestedInstallerFiles:
       - RelativeFilePath: headroom-cli.exe

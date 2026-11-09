@@ -12,7 +12,7 @@
 use headroom_core::{classify, Config, MemoryHistory, MemorySample, StateDiagnosis, SystemState};
 use headroom_engine::CleaningEngine;
 use headroom_ipc::ActionKind;
-use headroom_sys::SystemSampler;
+use headroom_sys::{install_crash_handler, is_process_elevated, SystemSampler};
 use std::mem::size_of;
 use std::sync::{Arc, Mutex};
 use windows::core::w;
@@ -21,8 +21,8 @@ use windows::Win32::Graphics::Dwm::{DwmSetWindowAttribute, DWMWA_USE_IMMERSIVE_D
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, CreatePen, CreateSolidBrush,
     DeleteDC, DeleteObject, DrawTextW, EndPaint, FillRect, FrameRect, InvalidateRect, LineTo,
-    MoveToEx, SelectObject, SetBkMode, SetTextColor, DT_LEFT, DT_NOPREFIX, DT_WORDBREAK, HDC,
-    PAINTSTRUCT, PS_SOLID, SRCCOPY, TRANSPARENT,
+    MoveToEx, SelectObject, SetBkMode, SetTextColor, DT_LEFT, DT_NOPREFIX, DT_RIGHT, DT_WORDBREAK,
+    HDC, PAINTSTRUCT, PS_SOLID, SRCCOPY, TRANSPARENT,
 };
 use windows::Win32::UI::HiDpi::{
     SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
@@ -30,14 +30,16 @@ use windows::Win32::UI::HiDpi::{
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetClientRect, GetMessageW,
     GetWindowLongPtrW, KillTimer, PostQuitMessage, RegisterClassExW, SetTimer, SetWindowLongPtrW,
-    TranslateMessage, GWLP_USERDATA, HMENU, MSG, WINDOW_EX_STYLE, WM_COMMAND, WM_DESTROY,
-    WM_ERASEBKGND, WM_PAINT, WM_TIMER, WNDCLASSEXW, WS_CHILD, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
+    TranslateMessage, GWLP_USERDATA, HMENU, MINMAXINFO, MSG, WINDOW_EX_STYLE, WM_COMMAND,
+    WM_DESTROY, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_PAINT, WM_SIZE, WM_TIMER, WNDCLASSEXW,
+    WS_CHILD, WS_OVERLAPPEDWINDOW, WS_VISIBLE,
 };
 
 const TIMER_REFRESH_ID: usize = 1;
 const ID_BTN_TRIM: usize = 2001;
 const ID_BTN_PURGE_LOW: usize = 2002;
 const ID_BTN_TOGGLE_EXCLUDE: usize = 2003;
+const ID_BTN_CHECK_UPDATE: usize = 2004;
 
 struct DashboardState {
     sampler: SystemSampler,
@@ -47,6 +49,7 @@ struct DashboardState {
     history: MemoryHistory,
     engine: Arc<CleaningEngine>,
     status_message: Arc<Mutex<Option<String>>>,
+    is_elevated: bool,
 }
 
 unsafe extern "system" fn window_proc(
@@ -163,8 +166,53 @@ unsafe extern "system" fn window_proc(
                             }
                         }
                     }
+                    ID_BTN_CHECK_UPDATE => {
+                        let status = Arc::clone(&state.status_message);
+                        std::thread::spawn(move || {
+                            *status.lock().unwrap() =
+                                Some("[*] Checking GitHub for latest version...".to_string());
+                            let output = std::process::Command::new("powershell")
+                                .args([
+                                    "-NoProfile",
+                                    "-Command",
+                                    "try { (Invoke-RestMethod -Uri 'https://api.github.com/repos/redwan2003-bot/HeadRoom/releases/latest' -TimeoutSec 3).tag_name } catch { 'OFFLINE' }",
+                                ])
+                                .output();
+                            if let Ok(out) = output {
+                                let tag = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                                if tag == "OFFLINE" || tag.is_empty() {
+                                    *status.lock().unwrap() = Some(
+                                        "[-] Update check: Network offline or timeout.".to_string(),
+                                    );
+                                } else if tag == "v1.1.0" {
+                                    *status.lock().unwrap() =
+                                        Some(format!("[+] Headroom is up to date ({})", tag));
+                                } else {
+                                    *status.lock().unwrap() = Some(format!(
+                                        "[★] New release available: {} (Visit GitHub Releases)",
+                                        tag
+                                    ));
+                                }
+                            } else {
+                                *status.lock().unwrap() =
+                                    Some("[-] Unable to execute update check.".to_string());
+                            }
+                        });
+                    }
                     _ => {}
                 }
+            }
+            LRESULT(0)
+        }
+        WM_SIZE => {
+            let _ = InvalidateRect(hwnd, None, false);
+            LRESULT(0)
+        }
+        WM_GETMINMAXINFO => {
+            if lparam.0 != 0 {
+                let mmi = &mut *(lparam.0 as *mut MINMAXINFO);
+                mmi.ptMinTrackSize.x = 680;
+                mmi.ptMinTrackSize.y = 600;
             }
             LRESULT(0)
         }
@@ -248,6 +296,25 @@ fn paint_dashboard(hwnd: HWND, hdc: HDC, state_ptr: *const DashboardState) {
                     &mut headline_wide,
                     &mut text_rect,
                     DT_LEFT | DT_NOPREFIX,
+                );
+
+                let priv_str = if dash.is_elevated {
+                    "[Elevated / Service Active]"
+                } else {
+                    "[Standard / Portable]"
+                };
+                let mut priv_wide: Vec<u16> = priv_str.encode_utf16().collect();
+                let mut priv_rect = RECT {
+                    left: width - 260,
+                    top: y + 8,
+                    right: width - 30,
+                    bottom: y + 30,
+                };
+                let _ = DrawTextW(
+                    mem_dc,
+                    &mut priv_wide,
+                    &mut priv_rect,
+                    DT_RIGHT | DT_NOPREFIX,
                 );
 
                 let mut expl_wide: Vec<u16> = diag.explanation.encode_utf16().collect();
@@ -512,6 +579,9 @@ fn main() {
     let start_instant = std::time::Instant::now();
     let is_bench = std::env::args().any(|arg| arg == "--bench");
 
+    // 0. Install Local Zero-Telemetry Crash Handler
+    install_crash_handler("headroom-dashboard");
+
     // 1. Per-Monitor DPI v2
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -519,6 +589,7 @@ fn main() {
 
     // 2. Initialize Telemetry & State (loading persisted user config)
     let (config, _) = Config::load_or_default();
+    let is_elevated = is_process_elevated();
     let mut sampler = match SystemSampler::new() {
         Ok(s) => s,
         Err(e) => {
@@ -544,6 +615,7 @@ fn main() {
         history,
         engine: Arc::new(CleaningEngine::default()),
         status_message: Arc::new(Mutex::new(None)),
+        is_elevated,
     });
 
     // 3. Register Window Class
@@ -585,11 +657,11 @@ fn main() {
         let _ = CreateWindowExW(
             WINDOW_EX_STYLE(0),
             w!("BUTTON"),
-            w!("Trim Background Apps"),
+            w!("Trim Background"),
             WS_CHILD | WS_VISIBLE,
             25,
             515,
-            195,
+            155,
             32,
             hwnd,
             HMENU(ID_BTN_TRIM as *mut _),
@@ -600,11 +672,11 @@ fn main() {
         let _ = CreateWindowExW(
             WINDOW_EX_STYLE(0),
             w!("BUTTON"),
-            w!("Purge Low Standby"),
+            w!("Purge Standby"),
             WS_CHILD | WS_VISIBLE,
-            230,
+            185,
             515,
-            195,
+            155,
             32,
             hwnd,
             HMENU(ID_BTN_PURGE_LOW as *mut _),
@@ -615,14 +687,29 @@ fn main() {
         let _ = CreateWindowExW(
             WINDOW_EX_STYLE(0),
             w!("BUTTON"),
-            w!("Toggle Exclude Top App"),
+            w!("Toggle Exclude Top"),
             WS_CHILD | WS_VISIBLE,
-            435,
+            345,
             515,
-            215,
+            170,
             32,
             hwnd,
             HMENU(ID_BTN_TOGGLE_EXCLUDE as *mut _),
+            HINSTANCE::default(),
+            None,
+        );
+
+        let _ = CreateWindowExW(
+            WINDOW_EX_STYLE(0),
+            w!("BUTTON"),
+            w!("Check Updates"),
+            WS_CHILD | WS_VISIBLE,
+            520,
+            515,
+            135,
+            32,
+            hwnd,
+            HMENU(ID_BTN_CHECK_UPDATE as *mut _),
             HINSTANCE::default(),
             None,
         );

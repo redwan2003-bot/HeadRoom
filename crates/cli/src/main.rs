@@ -14,7 +14,7 @@
 use headroom_core::{classify, Config};
 use headroom_engine::{CleaningEngine, EngineError};
 use headroom_ipc::ActionKind;
-use headroom_sys::SystemSampler;
+use headroom_sys::{install_crash_handler, SystemSampler};
 use std::process::exit;
 
 fn print_usage() {
@@ -40,6 +40,8 @@ FLAGS:
 }
 
 fn main() {
+    install_crash_handler("headroom-cli");
+
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args
         .iter()

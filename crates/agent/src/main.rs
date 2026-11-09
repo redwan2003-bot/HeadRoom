@@ -15,7 +15,8 @@ use headroom_core::{
 use headroom_engine::CleaningEngine;
 use headroom_ipc::ActionKind;
 use headroom_sys::{
-    get_foreground_process_id, is_fullscreen_or_gaming_active, MemoryResourceWatcher, SystemSampler,
+    get_foreground_process_id, install_crash_handler, is_fullscreen_or_gaming_active,
+    MemoryResourceWatcher, SystemSampler,
 };
 use std::mem::size_of;
 use std::process::Command;
@@ -503,6 +504,9 @@ fn remove_tray_icon(hwnd: HWND) {
 }
 
 fn main() {
+    // 0. Install Local Zero-Telemetry Crash Handler
+    install_crash_handler("headroom-agent");
+
     // 1. Enforce Per-Monitor DPI v2
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);

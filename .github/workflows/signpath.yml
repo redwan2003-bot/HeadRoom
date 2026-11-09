@@ -1,0 +1,24 @@
+name: SignPath Trusted Code Signing
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  sign:
+    name: Submit Signing Request
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Submit Artifacts to SignPath Foundation
+        uses: signpath/github-action-submit-signing-request@v1
+        continue-on-error: true
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '${{ secrets.SIGNPATH_ORGANIZATION_ID }}'
+          project-slug: 'headroom'
+          signing-policy-slug: 'release-signing'
+          github-token: '${{ secrets.GITHUB_TOKEN }}'
