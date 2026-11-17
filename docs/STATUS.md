@@ -43,7 +43,8 @@ Last Updated: 2026-11-09
 
 
 ### In Progress
-- [ ] Ready for final review, commit, and push.
+- [x] Pushed to remote (`origin/main`) and release tag `v1.1.0` published.
+- [ ] Ready for public release distribution and Store / winget submission.
 
 ---
 
