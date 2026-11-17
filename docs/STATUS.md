@@ -39,6 +39,10 @@ Last Updated: 2026-11-09
 - [x] Production 5: In-app quiet update checker.
 - [x] Production 6: SignPath CI code signing workflow.
 - [x] Production 7: WDSI Defender false-positive whitelisting submission packager (`dist/submit_wdsi.ps1`).
+- [x] Store 1: Microsoft Store MSIX packaging infrastructure (`dist/msstore/`, `AppxManifest.xml`, `generate_icons.ps1`).
+- [x] Store 2: Automated MSIX CI action (`.github/workflows/msstore-build.yml`).
+- [x] Release: Official v1.1.0 release notes (`RELEASE_NOTES.md`).
+- [x] Audit: Pre-launch feature reaudit completed with 100% pass rate.
 - [x] Release package and checksums regenerated in `target/release/SHA256SUMS.txt`.
 
 
