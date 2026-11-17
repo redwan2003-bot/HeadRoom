@@ -50,7 +50,11 @@ fn main() {
         println!("headroom {}", env!("CARGO_PKG_VERSION"));
         return;
     }
-    if args.is_empty() || args.iter().any(|a| a == "--help" || a == "-h") {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        print_usage();
+        return;
+    }
+    if args.is_empty() {
         print_usage();
         exit(2);
     }

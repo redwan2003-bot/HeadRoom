@@ -90,9 +90,10 @@ This guide contains the exact metadata, questionnaire answers, and technical ins
 
 ### Option B: MSIX Package
 If you prefer Microsoft to host the binaries in an MSIX container:
-1. Use Windows SDK `MakeAppx.exe` or the MSIX Packaging Tool.
-2. Sign with a temporary certificate or your SignPath Foundation certificate.
-3. Upload the `.msix` / `.msixupload` bundle directly to Partner Center.
+1. Automated CI Packaging: `.github/workflows/msstore-build.yml` compiles and packages `Headroom-v1.1.0.msix` on `windows-latest` runners.
+2. Local Packaging: Run `powershell -ExecutionPolicy Bypass -File dist\msstore\package_msix.ps1` to stage the layout and invoke Windows SDK `MakeAppx.exe`.
+3. Visual assets are generated in `dist/msstore/Assets/` via `dist/msstore/generate_icons.ps1`.
+4. Upload the generated `.msix` bundle directly to Partner Center.
 
 ---
 

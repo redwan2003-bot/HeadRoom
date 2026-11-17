@@ -1,0 +1,36 @@
+name: MS Store MSIX Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-msix:
+    name: Build Microsoft Store MSIX
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Release Binaries
+        run: cargo build --release
+
+      - name: Generate Visual Assets and Package MSIX
+        shell: pwsh
+        run: |
+          ./dist/msstore/generate_icons.ps1
+          ./dist/msstore/package_msix.ps1
+
+      - name: Upload MSIX Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: headroom-msix
+          path: target/release/*.msix
